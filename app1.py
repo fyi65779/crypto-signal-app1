@@ -127,22 +127,21 @@ def generate_signal(df):
 # --- Get Top Coins ---
 @st.cache_data(ttl=300)
 def fetch_top_coins(limit=30):
-    url = "https://api.coingecko.com/api/v3/coins/markets"
-    params = {
-        'vs_currency': 'usd',
-        'order': 'market_cap_desc',
-        'per_page': limit,
-        'page': 1,
-    }
+    url = "https://api.coingecko.com/api/v3/coins/list"
     try:
-        data = requests.get(url, params=params).json()
-
-        # Add Trump and Zerebro manually
-        extra = [
-            {'id': 'official-trump', 'symbol': 'TRUMP', 'name': 'Official Trump', 'current_price': fetch_coin_price('official-trump')},
-            {'id': 'zerebro', 'symbol': 'ZEREBRO', 'name': 'Zerebro', 'current_price': fetch_coin_price('zerebro')},
-        ]
-        return data + extra
+        full_list = requests.get(url).json()
+        ids_to_include = ['bitcoin', 'ethereum', 'binancecoin', 'ripple', 'cardano', 'dogecoin', 'solana', 'tron', 'polkadot', 'litecoin', 'official-trump', 'zerebro']
+        top_coins = []
+        for coin in full_list:
+            if coin['id'] in ids_to_include:
+                price = fetch_coin_price(coin['id'])
+                top_coins.append({
+                    'id': coin['id'],
+                    'symbol': coin['symbol'],
+                    'name': coin['name'],
+                    'current_price': price
+                })
+        return top_coins
     except:
         return []
 
