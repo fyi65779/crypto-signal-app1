@@ -163,13 +163,14 @@ def main():
     coin_choice = st.selectbox("📥 Coin select karein:", [f"{c['symbol'].upper()} - ${c['current_price']}" for c in coins])
     selected = coins[[f"{c['symbol'].upper()} - ${c['current_price']}" for c in coins].index(coin_choice)]
 
-    symbol = selected['symbol'].upper() + "/USD"
+    unsupported_symbols = ['official-trump', 'zerebro']
     coin_id = selected['id']
+    symbol = None if coin_id in unsupported_symbols else selected['symbol'].upper() + "/USD"
 
-    df = fetch_data(symbol)
+    df = fetch_data(symbol) if symbol else pd.DataFrame()
 
     if df.empty:
-        st.warning(f"⚠️ No data for {symbol} from TwelveData.")
+        st.warning(f"⚠️ No data for {selected['symbol'].upper()} from TwelveData.")
         price = fetch_coin_price(coin_id)
         if price > 0:
             st.success(f"📡 Real-time price: ${price}")
@@ -181,7 +182,7 @@ def main():
     df = calculate_indicators(df)
     signal = generate_signal(df)
 
-    st.subheader(f"📈 Signal for {selected['name']} ({symbol})")
+    st.subheader(f"📈 Signal for {selected['name']} ({selected['symbol'].upper()})")
     st.write(f"**RSI:** {signal['RSI']}")
     st.write(f"**MACD:** {signal['MACD']}")
     st.write(f"**EMA Crossover:** {signal['EMA']}")
