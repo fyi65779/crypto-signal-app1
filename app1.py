@@ -99,7 +99,7 @@ def generate_signal(df):
         'combined_signal': combined_signal
     }
 
-# Fetch top coins
+# Fetch top coins from CoinGecko and add Trump and Zerebro
 @st.cache_data(ttl=120)  # Cache for 2 minutes
 def fetch_top_coins(limit=35):
     url = "https://api.coingecko.com/api/v3/coins/markets"
@@ -116,15 +116,21 @@ def fetch_top_coins(limit=35):
         response.raise_for_status()
         coins = response.json()
 
-        if not any(c['symbol'].lower() == 'trump' for c in coins):
-            trump = fetch_specific_coin("official-trump")
-            if trump:
-                coins.append(trump)
+        # Adding Trump and Zerebro (real-time data if available)
+        # If Trump and Zerebro are not found on CoinGecko, you can add fake prices here.
+        trump = {
+            'symbol': 'official-trump',
+            'current_price': fetch_coin_price('official-trump'),
+            'name': 'Trump Coin'
+        }
+        zerebro = {
+            'symbol': 'zerebro',
+            'current_price': fetch_coin_price('zerebro'),
+            'name': 'Zerebro Coin'
+        }
 
-        if not any(c['symbol'].lower() == 'zerebro' for c in coins):
-            zerebro = fetch_specific_coin("zerebro")
-            if zerebro:
-                coins.append(zerebro)
+        coins.append(trump)
+        coins.append(zerebro)
 
         return coins
     except requests.exceptions.HTTPError as e:
@@ -133,6 +139,19 @@ def fetch_top_coins(limit=35):
     except Exception as e:
         st.error(f"❌ Unknown error fetching coins: {e}")
         return []
+
+def fetch_coin_price(symbol):
+    try:
+        url = f"https://api.coingecko.com/api/v3/simple/price?ids={symbol}&vs_currencies=usd"
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+        if symbol in data:
+            return data[symbol]['usd']
+        return 0
+    except Exception as e:
+        st.error(f"Error fetching {symbol} price: {e}")
+        return 0
 
 # Main Streamlit app
 def main():
