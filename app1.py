@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 
 # --- API Keys ---
-TWELVE_API_KEY = 'your_twelvedata_api_key'  # Replace with your TwelveData key
+TWELVE_API_KEY = '6cbc54ad9e114dbea0ff7d8a7228188b'  # Replace with your TwelveData key
 
 # --- Check Internet ---
 def is_connected():
