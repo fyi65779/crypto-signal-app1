@@ -6,7 +6,7 @@ import numpy as np
 # Your TwelveData API key
 API_KEY = '6cbc54ad9e114dbea0ff7d8a7228188b'
 
-# Internet check
+# Check Internet connection
 def is_connected():
     try:
         requests.get("https://www.google.com", timeout=5)
@@ -33,11 +33,25 @@ def fetch_data(symbol, interval='1h', limit=100):
             df = df.astype(float)
             return df
         else:
-            st.error(f"Error fetching data: {data.get('message', 'Unknown error')}")
+            st.warning(f"⚠️ Error fetching {symbol} from TwelveData.")
             return pd.DataFrame()
     except Exception as e:
         st.error(f"❌ Error fetching data: {e}")
         return pd.DataFrame()
+
+# Fetch real-time price from CoinGecko
+def fetch_coin_price(symbol):
+    try:
+        url = f"https://api.coingecko.com/api/v3/simple/price?ids={symbol}&vs_currencies=usd"
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+        if symbol in data:
+            return data[symbol]['usd']
+        return 0
+    except Exception as e:
+        st.error(f"Error fetching {symbol} price: {e}")
+        return 0
 
 # Calculate technical indicators
 def calculate_indicators(df):
@@ -91,12 +105,16 @@ def generate_signal(df):
     signals = [rsi_signal, macd_signal, ema_signal, bb_signal]
     combined_signal = '✅ Strong Buy' if 'Buy' in [s.split(' ')[0] for s in signals] else '❌ Strong Sell'
 
+    # Entry point calculation based on most recent data
+    entry_point = latest_data['close']  # Simplified entry point as the latest closing price
+    
     return {
         'rsi_signal': rsi_signal,
         'macd_signal': macd_signal,
         'ema_signal': ema_signal,
         'bb_signal': bb_signal,
-        'combined_signal': combined_signal
+        'combined_signal': combined_signal,
+        'entry_point': entry_point
     }
 
 # Fetch top coins from CoinGecko and add Trump and Zerebro
@@ -140,19 +158,6 @@ def fetch_top_coins(limit=35):
         st.error(f"❌ Unknown error fetching coins: {e}")
         return []
 
-def fetch_coin_price(symbol):
-    try:
-        url = f"https://api.coingecko.com/api/v3/simple/price?ids={symbol}&vs_currencies=usd"
-        response = requests.get(url)
-        response.raise_for_status()
-        data = response.json()
-        if symbol in data:
-            return data[symbol]['usd']
-        return 0
-    except Exception as e:
-        st.error(f"Error fetching {symbol} price: {e}")
-        return 0
-
 # Main Streamlit app
 def main():
     st.title("📊 Crypto Signal Generator")
@@ -180,7 +185,17 @@ def main():
     
     df = fetch_data(symbol)
     if df.empty:
-        st.warning("⚠️ No data found. Try again.")
+        st.warning(f"⚠️ No data found for {symbol}. Trying CoinGecko...")
+        price = fetch_coin_price(selected['symbol'])
+        if price > 0:
+            st.write(f"🔹 **Price for {selected['name']}**: ${price}")
+            signal = {
+                'combined_signal': '❌ No data (Using CoinGecko price)',
+                'entry_point': price
+            }
+            st.write(f"**Entry Point:** {signal['entry_point']}")
+        else:
+            st.warning("⚠️ No valid data for this coin.")
         st.stop()
 
     df = calculate_indicators(df)
@@ -193,6 +208,7 @@ def main():
     st.write(f"**EMA Crossover Signal:** {signal['ema_signal']}")
     st.write(f"**Bollinger Bands Signal:** {signal['bb_signal']}")
     st.write(f"**Combined Signal:** {signal['combined_signal']}")
+    st.write(f"**Entry Point:** {signal['entry_point']}")
 
 if __name__ == "__main__":
     main()
