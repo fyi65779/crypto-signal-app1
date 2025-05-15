@@ -5,7 +5,7 @@ import numpy as np
 from datetime import datetime
 
 # --- API Keys ---
-TWELVE_API_KEY = 'your_twelvedata_api_key'  # Replace with your TwelveData API key
+TWELVE_API_KEY = '6cbc54ad9e114dbea0ff7d8a7228188b'  # Replace with your TwelveData API key
 
 # --- Check Internet ---
 def is_connected():
