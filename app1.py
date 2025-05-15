@@ -3,9 +3,7 @@ import requests
 import pandas as pd
 import numpy as np
 
-# ---------------------- CONFIG ----------------------
-st.set_page_config(page_title="📈 Crypto Signal Generator", layout="centered")
-
+# ------------------- Utilities -------------------
 def is_connected():
     try:
         requests.get("https://www.google.com", timeout=5)
@@ -13,130 +11,126 @@ def is_connected():
     except:
         return False
 
-@st.cache_data(ttl=600)
-def fetch_top_coins():
+@st.cache_data(ttl=120)
+def fetch_top_coins(limit=30):
     url = "https://api.coingecko.com/api/v3/coins/markets"
     params = {
         'vs_currency': 'usd',
         'order': 'market_cap_desc',
-        'per_page': 50,
+        'per_page': limit,
         'page': 1,
-        'sparkline': False
+        'sparkline': 'false',
+        'price_change_percentage': '1h,24h,7d'
     }
     try:
         res = requests.get(url, params=params)
-        data = res.json()
-        # Add meme coins manually
-        extra = ['official-trump', 'zerebro']
-        for eid in extra:
-            try:
-                edata = requests.get(f"https://api.coingecko.com/api/v3/coins/{eid}").json()
-                price = edata.get('market_data', {}).get('current_price', {}).get('usd', None)
-                if price:
-                    data.append({
-                        'id': eid,
-                        'symbol': edata['symbol'].upper(),
-                        'name': edata['name'],
-                        'current_price': price
-                    })
-            except:
-                continue
-        return data
-    except Exception as e:
-        st.error(f"Error fetching coin list: {e}")
+        coins = res.json()
+        # Add extra meme coins if not in top list
+        for extra in ["official-trump", "zerebro"]:
+            if not any(c['id'] == extra for c in coins):
+                coin = fetch_specific_coin(extra)
+                if coin: coins.append(coin)
+        return coins
+    except:
+        st.error("❌ Error fetching coins.")
         return []
 
-def fetch_price_history(coin_id):
+@st.cache_data(ttl=120)
+def fetch_specific_coin(coin_id):
+    url = f"https://api.coingecko.com/api/v3/coins/{coin_id}"
     try:
-        url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart"
-        params = {'vs_currency': 'usd', 'days': 7, 'interval': 'hourly'}
-        res = requests.get(url, params=params).json()
-        prices = res.get("prices", [])
-        if not prices:
-            return pd.DataFrame()
-        df = pd.DataFrame(prices, columns=["timestamp", "price"])
-        df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms')
-        df.set_index('datetime', inplace=True)
-        df.drop('timestamp', axis=1, inplace=True)
-        return df
+        res = requests.get(url)
+        data = res.json()
+        market = data.get("market_data", {})
+        return {
+            'id': coin_id,
+            'symbol': data['symbol'],
+            'current_price': market.get('current_price', {}).get('usd', 0),
+            'price_change_percentage_1h_in_currency': market.get('price_change_percentage_1h_in_currency', {}).get('usd', 0),
+            'price_change_percentage_24h_in_currency': market.get('price_change_percentage_24h_in_currency', {}).get('usd', 0),
+            'price_change_percentage_7d_in_currency': market.get('price_change_percentage_7d_in_currency', {}).get('usd', 0),
+        }
     except:
-        return pd.DataFrame()
+        return None
 
-def compute_rsi(series, period=14):
-    delta = series.diff()
-    gain = delta.where(delta > 0, 0).rolling(window=period).mean()
-    loss = -delta.where(delta < 0, 0).rolling(window=period).mean()
-    rs = gain / loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
+# ------------------- Signal Logic -------------------
+def generate_signal(coin):
+    price = coin['current_price']
+    ch1h = coin.get('price_change_percentage_1h_in_currency', 0)
+    ch24h = coin.get('price_change_percentage_24h_in_currency', 0)
+    ch7d = coin.get('price_change_percentage_7d_in_currency', 0)
 
-def calculate_signal(df):
-    df['EMA12'] = df['price'].ewm(span=12).mean()
-    df['EMA26'] = df['price'].ewm(span=26).mean()
-    df['MACD'] = df['EMA12'] - df['EMA26']
-    df['MACD_signal'] = df['MACD'].ewm(span=9).mean()
-    df['RSI'] = compute_rsi(df['price'])
-
-    latest = df.dropna().iloc[-1]
-
+    # Weighted score
     score = 0
-    reasons = []
+    score += 0.5 if ch1h > 0 else -0.5
+    score += 1 if ch24h > 0 else -1
+    score += 1 if ch7d > 0 else -1
 
-    if latest['EMA12'] > latest['EMA26']:
-        score += 1
-        reasons.append("✅ EMA12 > EMA26 (Bullish)")
+    momentum = (
+        'Strong Bullish 🔼' if ch1h > 1 and ch24h > 1 else
+        'Bullish ⬆️' if ch24h > 0 else
+        'Bearish 🔽' if ch24h < 0 else 'Flat ⚖️'
+    )
 
-    if latest['MACD'] > latest['MACD_signal']:
-        score += 1
-        reasons.append("✅ MACD > Signal (Momentum Up)")
+    direction = '📈 Buy (Long)' if score >= 1 else '📉 Sell (Short)'
+    confidence = min(95, max(55, abs(score) * 20 + abs(ch24h)))  # adaptive confidence
+    expected_move = round(price * (ch24h / 100), 2)
 
-    if latest['RSI'] < 30:
-        score += 1
-        reasons.append("✅ RSI < 30 (Oversold)")
-    elif latest['RSI'] > 70:
-        score -= 1
-        reasons.append("❌ RSI > 70 (Overbought)")
-    else:
-        reasons.append("⚠️ RSI Neutral")
+    profitability = '✅ High chance of profit' if abs(expected_move) > 5 else '⚠️ Low profit expected'
+    prediction = '🚀 Likely to go up' if ch24h > 0 else '📉 Likely to go down'
+    up_prob = min(85, 60 + ch24h) if ch24h > 0 else 100 - abs(ch24h)
+    down_prob = 100 - up_prob
+    max_up = round(price * (1 + abs(ch24h / 100)), 4)
+    max_down = round(price * (1 - abs(ch24h / 100)), 4)
+    only_max = f"🔼 Max Up Prediction: ${max_up}" if ch24h > 0 else f"🔽 Max Down Prediction: ${max_down}"
 
-    signal = "✅ Strong Buy" if score >= 1 else "❌ Strong Sell"
-    return signal, reasons, round(latest['price'], 4)
+    return {
+        'symbol': coin['symbol'].upper(),
+        'id': coin['id'],
+        'direction': direction,
+        'entry_point': round(price, 4),
+        'confidence': round(confidence, 2),
+        'prediction': prediction,
+        'profitability': profitability,
+        'up_probability': round(up_prob),
+        'down_probability': round(down_prob),
+        'only_max': only_max,
+        'momentum': momentum
+    }
 
-# ---------------------- MAIN ----------------------
+# ------------------- Streamlit App -------------------
 def main():
-    st.title("📈 Crypto Signal Generator (Most Probable)")
+    st.set_page_config(page_title="Crypto Signal Generator", layout="centered")
+    st.title("📊 Crypto Signal Generator")
+    st.write("Real-time predictions based on CoinGecko data (No Neutral Signals)")
+
+    if st.button("🔄 Refresh"):
+        st.rerun()
 
     if not is_connected():
-        st.error("❌ No internet connection.")
+        st.error("❌ No Internet. Please connect and try again.")
         return
 
     coins = fetch_top_coins()
-    coin_options = [f"{coin['symbol'].upper()} - {coin['name']} (${coin['current_price']})" for coin in coins]
-    selected = st.selectbox("Select a Coin", coin_options)
-    selected_coin = coins[coin_options.index(selected)]
-    coin_id = selected_coin['id']
+    if not coins:
+        st.warning("⚠️ Coin list unavailable.")
+        return
 
-    # Show current price
-    st.write(f"**Current Price:** ${round(selected_coin['current_price'], 4)}")
+    coin_options = [f"{c['symbol'].upper()} - ${c['current_price']}" for c in coins]
+    choice = st.selectbox("📥 Select a Coin", coin_options)
+    selected = coins[coin_options.index(choice)]
 
-    # Try fetching price history
-    df = fetch_price_history(coin_id)
-
-    if df.empty or len(df) < 30:
-        st.warning("⚠️ No price history available for signal.")
-        st.info("⚠️ Showing fallback prediction based on price logic.")
-        fallback_price = selected_coin['current_price']
-        signal = "✅ Strong Buy" if fallback_price < 5 else "❌ Strong Sell"
-        st.subheader("📊 Fallback Signal")
-        st.success(signal)
-    else:
-        signal, reasons, entry = calculate_signal(df)
-        st.subheader("📊 Signal Prediction")
-        st.success(signal)
-        st.write(f"**Entry Price:** ${entry}")
-        st.markdown("**Reasoning:**")
-        for r in reasons:
-            st.markdown(f"- {r}")
+    signal = generate_signal(selected)
+    st.subheader(f"🔔 Signal for {signal['symbol']}")
+    st.write(f"**Direction:** {signal['direction']}")
+    st.write(f"**Entry Point:** ${signal['entry_point']}")
+    st.write(f"**Confidence:** {signal['confidence']}%")
+    st.write(f"**Momentum:** {signal['momentum']}")
+    st.write(f"**Prediction:** {signal['prediction']}")
+    st.write(f"**Profitability:** {signal['profitability']}")
+    st.write(f"**Up Probability:** {signal['up_probability']}%")
+    st.write(f"**Down Probability:** {signal['down_probability']}%")
+    st.write(f"{signal['only_max']}")
 
 if __name__ == "__main__":
     main()
