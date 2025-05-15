@@ -4,10 +4,11 @@ import pandas as pd
 import numpy as np
 
 # ---------------------- CONFIG ----------------------
-COINGECKO_MARKET_URL = "https://api.coingecko.com/api/v3/coins/markets"
-COINGECKO_SIMPLE_URL = "https://api.coingecko.com/api/v3/simple/price"
+st.set_page_config(page_title="📈 Crypto Signal Generator", layout="centered")
 
-# ---------------------- UTILITIES ----------------------
+COINGECKO_MARKET_URL = "https://api.coingecko.com/api/v3/coins/markets"
+
+# ---------------------- FUNCTIONS ----------------------
 def is_connected():
     try:
         requests.get("https://www.google.com", timeout=5)
@@ -17,21 +18,20 @@ def is_connected():
 
 @st.cache_data(ttl=600)
 def fetch_top_coins():
-    try:
-        params = {
-            'vs_currency': 'usd',
-            'order': 'market_cap_desc',
-            'per_page': 50,
-            'page': 1,
-            'sparkline': 'false'
-        }
-        response = requests.get(COINGECKO_MARKET_URL, params=params)
-        data = response.json()
+    params = {
+        'vs_currency': 'usd',
+        'order': 'market_cap_desc',
+        'per_page': 50,
+        'page': 1,
+        'sparkline': 'false'
+    }
+    response = requests.get(COINGECKO_MARKET_URL, params=params)
+    data = response.json()
 
-        # Extra meme coins
-        extra_ids = ['official-trump', 'zerebro']
-        for coin_id in extra_ids:
-            if not any(coin.get('id') == coin_id for coin in data):
+    extra_ids = ['official-trump', 'zerebro']
+    for coin_id in extra_ids:
+        if not any(coin.get('id') == coin_id for coin in data):
+            try:
                 coin_data = requests.get(f"https://api.coingecko.com/api/v3/coins/{coin_id}").json()
                 market_data = coin_data.get("market_data", {})
                 data.append({
@@ -40,52 +40,24 @@ def fetch_top_coins():
                     'name': coin_data.get('name', coin_id),
                     'current_price': market_data.get('current_price', {}).get('usd', 0)
                 })
-
-        return data
-    except Exception as e:
-        st.error(f"Error fetching coins: {e}")
-        return []
+            except:
+                continue
+    return data
 
 def fetch_price_data(coin_id):
     try:
         url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart"
-        params = {'vs_currency': 'usd', 'days': 7, 'interval': 'hourly'}
+        params = {'vs_currency': 'usd', 'days': '7', 'interval': 'hourly'}
         response = requests.get(url, params=params)
         data = response.json()
-
-        prices = data.get('prices', [])
-        df = pd.DataFrame(prices, columns=['timestamp', 'price'])
-        df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms')
-        df.set_index('datetime', inplace=True)
-        df.drop('timestamp', axis=1, inplace=True)
+        prices = data.get("prices", [])
+        df = pd.DataFrame(prices, columns=["timestamp", "price"])
+        df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
+        df.set_index("datetime", inplace=True)
+        df.drop("timestamp", axis=1, inplace=True)
         return df
     except:
         return pd.DataFrame()
-
-def calculate_signals(df):
-    df['EMA12'] = df['price'].ewm(span=12).mean()
-    df['EMA26'] = df['price'].ewm(span=26).mean()
-    df['MACD'] = df['EMA12'] - df['EMA26']
-    df['Signal'] = df['MACD'].ewm(span=9).mean()
-
-    df['RSI'] = compute_rsi(df['price'], 14)
-    latest = df.iloc[-1]
-
-    score = 0
-    if latest['EMA12'] > latest['EMA26']:
-        score += 1  # Bullish crossover
-    if latest['MACD'] > latest['Signal']:
-        score += 1
-    if latest['RSI'] < 30:
-        score += 1  # Oversold
-    elif latest['RSI'] > 70:
-        score -= 1  # Overbought
-
-    # Force a decision
-    if score >= 1:
-        return "✅ Strong Buy"
-    else:
-        return "❌ Strong Sell"
 
 def compute_rsi(series, period=14):
     delta = series.diff()
@@ -95,36 +67,71 @@ def compute_rsi(series, period=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-# ---------------------- MAIN APP ----------------------
-st.set_page_config(page_title="Crypto Signal Generator", layout="centered")
+def calculate_signal(df):
+    df['EMA12'] = df['price'].ewm(span=12).mean()
+    df['EMA26'] = df['price'].ewm(span=26).mean()
+    df['MACD'] = df['EMA12'] - df['EMA26']
+    df['MACD_signal'] = df['MACD'].ewm(span=9).mean()
+    df['RSI'] = compute_rsi(df['price'])
 
+    latest = df.dropna().iloc[-1]
+
+    score = 0
+    notes = []
+
+    if latest['EMA12'] > latest['EMA26']:
+        score += 1
+        notes.append("✅ EMA12 > EMA26 (Bullish)")
+
+    if latest['MACD'] > latest['MACD_signal']:
+        score += 1
+        notes.append("✅ MACD > Signal (Momentum Up)")
+
+    if latest['RSI'] < 30:
+        score += 1
+        notes.append("✅ RSI < 30 (Oversold)")
+    elif latest['RSI'] > 70:
+        score -= 1
+        notes.append("❌ RSI > 70 (Overbought)")
+    else:
+        notes.append("⚠️ RSI Neutral")
+
+    if score >= 1:
+        signal = "✅ Strong Buy"
+    else:
+        signal = "❌ Strong Sell"
+
+    return signal, notes, latest['price']
+
+# ---------------------- MAIN APP ----------------------
 def main():
     st.title("📈 Crypto Signal Generator (Most Probable)")
-
+    
     if not is_connected():
         st.error("❌ No internet connection.")
         return
 
     coins = fetch_top_coins()
-    if not coins:
-        st.warning("⚠️ Could not load coins.")
-        return
-
-    coin_options = [f"{coin['symbol'].upper()} - {coin['name']}" for coin in coins]
+    coin_options = [f"{c['symbol'].upper()} - {c['name']}" for c in coins]
     selected = st.selectbox("Select a Coin", coin_options)
-    coin_id = coins[coin_options.index(selected)]['id']
+    coin = coins[coin_options.index(selected)]
 
-    # Price display
-    price = fetch_price_data(coin_id)
-    if price.empty:
-        st.warning("⚠️ No price history available. Showing basic info only.")
-        st.write(f"Current Price: ${coins[coin_options.index(selected)]['current_price']}")
-        st.write("❌ Unable to generate signal without price history.")
+    df = fetch_price_data(coin['id'])
+
+    st.markdown(f"**Current Price:** ${round(coin['current_price'], 4)}")
+
+    if df.empty or len(df) < 50:
+        st.warning("⚠️ No candle data available for this coin. Using real-time price only.")
+        st.info("⚠️ Cannot generate chart or signal due to lack of data.")
     else:
-        st.line_chart(price['price'])
-        signal = calculate_signals(price)
+        st.line_chart(df['price'], use_container_width=True)
+        signal, notes, entry_price = calculate_signal(df)
         st.subheader("📊 Signal Prediction")
-        st.success(signal)
+        st.write(f"**Signal:** {signal}")
+        st.write(f"**Entry Price:** ${round(entry_price, 4)}")
+        st.markdown("**Analysis Notes:**")
+        for note in notes:
+            st.markdown(f"- {note}")
 
 if __name__ == "__main__":
     main()
