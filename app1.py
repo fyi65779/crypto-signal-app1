@@ -9,7 +9,7 @@ def is_connected():
     except requests.ConnectionError:
         return False
 
-# Fetch top coins
+# Fetch top coins from CoinGecko
 @st.cache_data(ttl=120)
 def fetch_top_coins(limit=50):
     url = "https://api.coingecko.com/api/v3/coins/markets"
@@ -29,7 +29,7 @@ def fetch_top_coins(limit=50):
         st.error(f"❌ Error: {e}")
         return []
 
-# Generate trading signal
+# Signal generator
 def generate_signal(coin):
     price = coin['current_price']
     change_1h = coin.get('price_change_percentage_1h_in_currency', 0)
@@ -64,6 +64,10 @@ def generate_signal(coin):
 st.set_page_config(page_title="📊 CoinGecko Signal Generator", layout="centered")
 st.title("📊 Crypto Signal Generator (Most Probable Using CoinGecko)")
 st.markdown("🌐 Powered by CoinGecko – no candles or 3rd party APIs used.")
+
+# Refresh Button
+if st.button("🔁 Refresh Data"):
+    st.rerun()
 
 if not is_connected():
     st.error("❌ No internet connection.")
