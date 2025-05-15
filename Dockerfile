@@ -1,23 +1,17 @@
-# Use the official Python image
-FROM python:3.9-slim
+# Use official Streamlit image as base
+FROM python:3.10
 
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-
-# Set work directory
+# Set working directory
 WORKDIR /app
 
+# Copy files
+COPY . .
+
 # Install dependencies
-COPY requirements.txt /app/
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy project
-COPY . /app/
-
-# Expose the port Streamlit runs on
+# Expose the port
 EXPOSE 8501
 
-# Run the application
-CMD ["streamlit", "run", "app.py"]
+# Run Streamlit app
+CMD ["streamlit", "run", "app1.py", "--server.port=8501", "--server.enableCORS=false"]
