@@ -3,8 +3,10 @@ import requests
 import pandas as pd
 import numpy as np
 
-TWELVE_API_KEY = '6cbc54ad9e114dbea0ff7d8a7228188b'  # Replace with your TwelveData API Key
+# --- API Key ---
+TWELVE_API_KEY = '6cbc54ad9e114dbea0ff7d8a7228188b'  # یہاں اپنا TwelveData API کلید درج کریں
 
+# --- انٹرنیٹ کنکشن چیک کریں ---
 def is_connected():
     try:
         requests.get("https://www.google.com", timeout=5)
@@ -12,6 +14,7 @@ def is_connected():
     except requests.ConnectionError:
         return False
 
+# --- تاریخی ڈیٹا حاصل کریں ---
 def fetch_data(symbol, interval='1h', limit=100):
     url = f"https://api.twelvedata.com/time_series"
     params = {
@@ -32,6 +35,7 @@ def fetch_data(symbol, interval='1h', limit=100):
     except:
         return pd.DataFrame()
 
+# --- حقیقی وقت کی قیمت حاصل کریں ---
 def fetch_coin_price(coin_id):
     try:
         url = f"https://api.coingecko.com/api/v3/simple/price?ids={coin_id}&vs_currencies=usd"
@@ -40,6 +44,7 @@ def fetch_coin_price(coin_id):
     except:
         return 0
 
+# --- تکنیکی اشاریے کا حساب لگائیں ---
 def calculate_indicators(df):
     df['EMA9'] = df['close'].ewm(span=9, adjust=False).mean()
     df['EMA21'] = df['close'].ewm(span=21, adjust=False).mean()
@@ -53,6 +58,7 @@ def calculate_indicators(df):
     df['MACD_signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
     return df
 
+# --- سگنل تیار کریں ---
 def generate_signal(df):
     latest = df.iloc[-1]
     score = 0
@@ -60,57 +66,57 @@ def generate_signal(df):
     # RSI
     rsi = latest['RSI']
     if rsi < 30:
-        rsi_sig = 'Buy (RSI Oversold)'
+        rsi_sig = 'خریداری (RSI کم)'
         score += 1
     elif rsi > 70:
-        rsi_sig = 'Sell (RSI Overbought)'
+        rsi_sig = 'فروخت (RSI زیادہ)'
         score -= 1
     else:
-        rsi_sig = 'Neutral'
+        rsi_sig = 'غیر جانبدار'
 
     # MACD
     macd = latest['MACD']
     macd_sig = latest['MACD_signal']
     if macd > macd_sig:
-        macd_result = 'Bullish (MACD > Signal)'
+        macd_result = 'بلش (MACD > سگنل)'
         score += 1
     else:
-        macd_result = 'Bearish (MACD < Signal)'
+        macd_result = 'بئیرش (MACD < سگنل)'
         score -= 1
 
-    # EMA crossover
+    # EMA کراس اوور
     if latest['EMA9'] > latest['EMA21']:
-        ema_result = 'Bullish (EMA9 > EMA21)'
+        ema_result = 'بلش (EMA9 > EMA21)'
         score += 1
     else:
-        ema_result = 'Bearish (EMA9 < EMA21)'
+        ema_result = 'بئیرش (EMA9 < EMA21)'
         score -= 1
 
-    # Bollinger
+    # Bollinger Bands
     if latest['close'] < latest['LowerBand']:
-        bb_result = 'Buy (Below Lower Band)'
+        bb_result = 'خریداری (نیچے کی بینڈ سے کم)'
         score += 1
     elif latest['close'] > latest['UpperBand']:
-        bb_result = 'Sell (Above Upper Band)'
+        bb_result = 'فروخت (اوپر کی بینڈ سے زیادہ)'
         score -= 1
     else:
-        bb_result = 'Neutral'
+        bb_result = 'غیر جانبدار'
 
-    # Trend
+    # رجحان
     if latest['close'] > latest['EMA200']:
-        trend = 'Uptrend'
+        trend = 'اوپر کا رجحان'
         score += 1
     else:
-        trend = 'Downtrend'
+        trend = 'نیچے کا رجحان'
         score -= 1
 
-    # Final Signal
+    # حتمی سگنل
     if score >= 3:
-        final = '✅ Strong Buy'
+        final = '✅ مضبوط خریداری'
     elif score <= -3:
-        final = '❌ Strong Sell'
+        final = '❌ مضبوط فروخت'
     else:
-        final = '⚠️ Neutral / Caution'
+        final = '⚠️ احتیاط / غیر جانبدار'
 
     return {
         'RSI': rsi_sig,
@@ -123,32 +129,51 @@ def generate_signal(df):
         'Entry': latest['close']
     }
 
+# --- ٹاپ 50 کوائنز حاصل کریں ---
 @st.cache_data(ttl=300)
-def fetch_all_coins():
+def fetch_top_50_coins():
     try:
-        url = "https://api.coingecko.com/api/v3/coins/list"
-        coins = requests.get(url).json()
-        return sorted(coins, key=lambda x: x['symbol'])
+        url = "https://api.coingecko.com/api/v3/coins/markets"
+        params = {
+            'vs_currency': 'usd',
+            'order': 'market_cap_desc',
+            'per_page': 50,
+            'page': 1,
+            'sparkline': False
+        }
+        coins = requests.get(url, params=params).json()
+        # مخصوص meme کوائنز شامل کریں اگر وہ ٹاپ 50 میں نہیں ہیں
+        extra_ids = ['official-trump', 'zerebro']
+        for coin_id in extra_ids:
+            coin_data = requests.get(f"https://api.coingecko.com/api/v3/coins/{coin_id}").json()
+            coins.append({
+                'id': coin_data['id'],
+                'symbol': coin_data['symbol'],
+                'name': coin_data['name'],
+                'current_price': coin_data['market_data']['current_price']['usd']
+            })
+        return coins
     except:
         return []
 
+# --- Streamlit ایپ ---
 def main():
     st.set_page_config(page_title="Crypto Signal Generator", layout="centered")
     st.title("📊 Crypto Signal Generator")
-    st.markdown("🔍 **All coins supported via CoinGecko + TwelveData**")
+    st.markdown("🔍 **ٹاپ 50 کوائنز کے لیے تجارتی سگنلز**")
 
     if not is_connected():
-        st.error("❌ No internet connection.")
+        st.error("❌ انٹرنیٹ کنکشن دستیاب نہیں۔")
         return
 
-    coin_list = fetch_all_coins()
-    if not coin_list:
-        st.warning("⚠️ Coin list not loaded.")
+    coins = fetch_top_50_coins()
+    if not coins:
+        st.warning("⚠️ کوائنز کی فہرست حاصل نہیں ہو سکی۔")
         return
 
-    coin_names = [f"{c['symbol'].upper()} - {c['name']}" for c in coin_list]
-    selected_name = st.selectbox("Select a coin:", coin_names)
-    selected_coin = coin_list[coin_names.index(selected_name)]
+    coin_names = [f"{c['symbol'].upper()} - {c['name']}" for c in coins]
+    selected_name = st.selectbox("کوائن منتخب کریں:", coin_names)
+    selected_coin = coins[coin_names.index(selected_name)]
 
     coin_id = selected_coin['id']
     coin_symbol = selected_coin['symbol'].upper()
@@ -162,24 +187,24 @@ def main():
     if df.empty:
         price = fetch_coin_price(coin_id)
         if price > 0:
-            st.success(f"📈 Real-time Price: ${price}")
-            st.info("ℹ️ Signal generation not available (TwelveData does not support this coin).")
+            st.success(f"📈 حقیقی وقت کی قیمت: ${price}")
+            st.info("ℹ️ سگنل تیار نہیں کیا جا سکتا (TwelveData اس کوائن کو سپورٹ نہیں کرتا)۔")
         else:
-            st.error("❌ Could not fetch price.")
+            st.error("❌ قیمت حاصل نہیں کی جا سکی۔")
         return
 
     df = calculate_indicators(df)
     signal = generate_signal(df)
 
-    st.subheader("📈 Signal Analysis")
+    st.subheader("📈 سگنل تجزیہ")
     st.write(f"**RSI:** {signal['RSI']}")
     st.write(f"**MACD:** {signal['MACD']}")
-    st.write(f"**EMA Crossover:** {signal['EMA']}")
+    st.write(f"**EMA کراس اوور:** {signal['EMA']}")
     st.write(f"**Bollinger Bands:** {signal['Bollinger']}")
-    st.write(f"**Trend:** {signal['Trend']}")
-    st.write(f"**Score:** {signal['Score']}")
-    st.write(f"**Signal:** {signal['Final']}")
-    st.write(f"**Entry Point:** ${round(signal['Entry'], 4)}")
+    st.write(f"**رجحان:** {signal['Trend']}")
+    st.write(f"**سکور:** {signal['Score']}")
+    st.write(f"**سگنل:** {signal['Final']}")
+    st.write(f"**انٹری پوائنٹ:** ${round(signal['Entry'], 4)}")
 
 if __name__ == "__main__":
     main()
