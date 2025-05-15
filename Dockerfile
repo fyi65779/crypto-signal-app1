@@ -1,17 +1,17 @@
-# Use official Streamlit image as base
+# Use official Python base image
 FROM python:3.10
 
 # Set working directory
 WORKDIR /app
 
-# Copy files
+# Copy all files
 COPY . .
 
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Expose the port
+# Expose Streamlit port
 EXPOSE 8501
 
-# Run Streamlit app
-CMD ["streamlit", "run", "app1.py", "--server.port=8501", "--server.enableCORS=false"]
+# Run the app
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.enableCORS=false"]
