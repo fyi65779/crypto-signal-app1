@@ -2,9 +2,10 @@ import streamlit as st
 import requests
 import pandas as pd
 import numpy as np
+from datetime import datetime
 
 # --- API Keys ---
-TWELVE_API_KEY = '6cbc54ad9e114dbea0ff7d8a7228188b'  # Replace with your TwelveData key
+TWELVE_API_KEY = 'your_twelvedata_api_key'  # Replace with your TwelveData API key
 
 # --- Check Internet ---
 def is_connected():
@@ -50,7 +51,13 @@ def calculate_indicators(df):
     df['EMA9'] = df['close'].ewm(span=9, adjust=False).mean()
     df['EMA21'] = df['close'].ewm(span=21, adjust=False).mean()
     df['EMA200'] = df['close'].ewm(span=200, adjust=False).mean()
-    df['RSI'] = 100 - (100 / (1 + (df['close'].diff() > 0).rolling(14).mean() / (df['close'].diff() < 0).rolling(14).mean()))
+    delta = df['close'].diff()
+    up = delta.clip(lower=0)
+    down = -1 * delta.clip(upper=0)
+    avg_gain = up.rolling(window=14).mean()
+    avg_loss = down.rolling(window=14).mean()
+    rs = avg_gain / avg_loss
+    df['RSI'] = 100 - (100 / (1 + rs))
     df['UpperBand'] = df['close'].rolling(20).mean() + 2 * df['close'].rolling(20).std()
     df['LowerBand'] = df['close'].rolling(20).mean() - 2 * df['close'].rolling(20).std()
     df['EMA12'] = df['close'].ewm(span=12, adjust=False).mean()
@@ -159,7 +166,7 @@ def main():
         st.warning("⚠️ Could not load coins from CoinGecko.")
         return
 
-    coin_choice = st.selectbox("📥 Coin select karein:", [f"{c['symbol'].upper()} - ${c['current_price']}" for c in coins])
+    coin_choice = st.selectbox("📥 Select a coin:", [f"{c['symbol'].upper()} - ${c['current_price']}" for c in coins])
     selected = coins[[f"{c['symbol'].upper()} - ${c['current_price']}" for c in coins].index(coin_choice)]
 
     unsupported_symbols = ['official-trump', 'zerebro']
