@@ -5,7 +5,7 @@ import numpy as np
 import plotly.graph_objs as go
 
 # ---------------------- CONFIG ----------------------
-TWELVE_API_KEY = "6cbc54ad9e114dbea0ff7d8a7228188b"
+TWELVE_API_KEY = "6cbc54ad9e114dbea0ff7d8a7228188b"  # Replace with your TwelveData API Key
 
 # ---------------------- UTILITIES ----------------------
 def is_connected():
@@ -29,24 +29,31 @@ def fetch_top_coins():
         response = requests.get(url, params=params)
         data = response.json()
 
+        # Ensure we have a list of coins
+        if not isinstance(data, list):
+            raise ValueError("Invalid response from CoinGecko. Expected list, got: " + str(type(data)))
+
         # Include meme coins if missing
         extra_ids = ['official-trump', 'zerebro']
         for coin_id in extra_ids:
-            if coin_id not in [coin['id'] for coin in data]:
-                coin_data = requests.get(f"https://api.coingecko.com/api/v3/coins/{coin_id}").json()
-                market_data = coin_data.get("market_data", {})
-                data.append({
-                    'id': coin_id,
-                    'symbol': coin_data.get('symbol', '').upper(),
-                    'name': coin_data.get('name', ''),
-                    'current_price': market_data.get('current_price', {}).get('usd', 0)
-                })
-
+            if not any(coin.get('id') == coin_id for coin in data):
+                try:
+                    coin_data = requests.get(f"https://api.coingecko.com/api/v3/coins/{coin_id}").json()
+                    market_data = coin_data.get("market_data", {})
+                    current_price = market_data.get('current_price', {}).get('usd', 0)
+                    if current_price:
+                        data.append({
+                            'id': coin_id,
+                            'symbol': coin_data.get('symbol', '').upper(),
+                            'name': coin_data.get('name', coin_id),
+                            'current_price': current_price
+                        })
+                except Exception as e:
+                    st.warning(f"⚠️ Couldn't fetch {coin_id}: {e}")
         return data
     except Exception as e:
         st.error(f"Error fetching top coins: {e}")
         return []
-
 
 def fetch_realtime_price(coin_id):
     try:
@@ -55,7 +62,6 @@ def fetch_realtime_price(coin_id):
         return response[coin_id]['usd'] if coin_id in response else 0
     except:
         return 0
-
 
 def fetch_twelvedata(symbol, interval="1h", limit=100):
     try:
@@ -80,7 +86,6 @@ def fetch_twelvedata(symbol, interval="1h", limit=100):
     except:
         return pd.DataFrame()
 
-
 def calculate_indicators(df):
     df['EMA9'] = df['close'].ewm(span=9).mean()
     df['EMA21'] = df['close'].ewm(span=21).mean()
@@ -100,12 +105,10 @@ def calculate_indicators(df):
 
     return df
 
-
 def generate_signal(df):
     latest = df.iloc[-1]
     score = 0
 
-    # RSI
     if latest['RSI'] < 30:
         rsi = "Buy (Oversold)"; score += 1
     elif latest['RSI'] > 70:
@@ -113,19 +116,16 @@ def generate_signal(df):
     else:
         rsi = "Neutral"
 
-    # MACD
     if latest['MACD'] > latest['MACD_signal']:
         macd = "Bullish"; score += 1
     else:
         macd = "Bearish"; score -= 1
 
-    # EMA
     if latest['EMA9'] > latest['EMA21']:
         ema = "Bullish EMA"; score += 1
     else:
         ema = "Bearish EMA"; score -= 1
 
-    # Bollinger
     if latest['close'] < latest['LowerBand']:
         bb = "Buy (Low Band)"; score += 1
     elif latest['close'] > latest['UpperBand']:
@@ -133,11 +133,9 @@ def generate_signal(df):
     else:
         bb = "Neutral"
 
-    # Trend
     trend = "Uptrend" if latest['close'] > latest['EMA200'] else "Downtrend"
     score += 1 if trend == "Uptrend" else -1
 
-    # Final
     if score >= 3:
         signal = "✅ Strong Buy"
     elif score <= -3:
@@ -155,7 +153,6 @@ def generate_signal(df):
         'final': signal,
         'entry': latest['close']
     }
-
 
 def plot_chart(df, coin_name):
     fig = go.Figure()
